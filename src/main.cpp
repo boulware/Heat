@@ -15,7 +15,7 @@ static const uint8_t CellOffset = 1; // [m]
 static const uint16_t WindowWidth = 800;
 static const uint16_t WindowHeight = 800;
 
-static const float c = 1;
+static const float c = 10;
 
 struct timer
 {
@@ -73,7 +73,7 @@ public:
     }
 };
 
-static timer Timer(1000000, "Single draw call with individual setFillColor call + draw(Rects[]) call (T on cell POD)");
+//static timer Timer(1000000, "Single draw call with individual setFillColor call + draw(Rects[]) call (T on cell POD)");
 
 sf::Color hsv(int hue, float sat, float val)
 {
@@ -108,44 +108,35 @@ sf::Color hsv(int hue, float sat, float val)
 struct cell
 {
     float Temperature; // [K]
-//    float Resistance; // [(m*K)/W]
+    float Resistance; // [(m*K)/W]
 };
 
-struct grid
+class grid : public sf::Drawable, public sf::Transformable
 {
+public:
     uint16_t Width, Height;
 
     std::vector<cell>* CurrentBuffer;
     std::vector<cell>* NextBuffer;
     std::vector<cell> Buffers[2];
 
+    sf::Shader CellTemperatureShader;
+
+    
+    
     unsigned int GetCellIndex(unsigned int x, unsigned int y)
     {
         return (y * Width) + x;
     }
     
-    std::vector<sf::RectangleShape> Rects;
+//    std::vector<sf::RectangleShape> Rects;
+    sf::VertexArray m_vertices;
     
     static const uint16_t MaxSize = 1000;
     
-    grid(uint16_t Width, uint16_t Height);
+    grid(unsigned int Width, unsigned int Height, sf::Vector2u CellSize);
 
-    void Draw(sf::RenderWindow &Window)
-    {
-        for(int y = 0; y < Height; y++)
-        {
-            for(int x = 0; x < Width; x++)
-            {
-                Timer.Begin();
-                float T = CurrentBuffer->at(GetCellIndex(x, y)).Temperature;
-                // TODO(tyler): A color lookup table instead of this messy algorithm may help speed.
-                Rects[GetCellIndex(x, y)].setFillColor(hsv(T * 100.0 / 255.0, 0.9, 0.9));
-                Window.draw(Rects[GetCellIndex(x, y)]);
-                Timer.End();
-            }
-        }
-    }
-
+    
     void OutputState();
     void TransferCellHeat(int Source, int Target);
     void ConductHeat();
@@ -157,26 +148,58 @@ struct grid
         CurrentBuffer = NextBuffer;
         NextBuffer = Temp;
     }
-};
 
-grid::grid(uint16_t Width, uint16_t Height)
-        :
-        Width(Width), Height(Height),
-        Rects(Width * Height, sf::RectangleShape(sf::Vector2f(WindowWidth / Width, WindowHeight / Height))),
-        CurrentBuffer(&Buffers[0]), NextBuffer(&Buffers[1])
-{
-    sf::Vector2i RectSize(WindowWidth / Width, WindowHeight/ Height);
-
-    for(int y = 0; y < Height; y++)
+    void UpdateCellColors()
     {
-        for(int x = 0; x < Width; x++)
+        for(unsigned int y = 0; y < Height; y++)
         {
-            Rects[(y * Width) + x].setPosition(RectSize.x * x, RectSize.y * y);
+            for(unsigned int x = 0; x < Width; x++)
+            {
+                sf::Vertex* Quad = &m_vertices[4 * (y * Width + x)];
+
+                float T = CurrentBuffer->at(y * Width + x).Temperature;
+                sf::Color TemperatureColor = hsv(T * 100.0 / 255.0, 0.9, 0.9);
+                Quad[0].color = TemperatureColor;
+                Quad[1].color = TemperatureColor;
+                Quad[2].color = TemperatureColor;
+                Quad[3].color = TemperatureColor;
+            }
         }
     }
     
-//    Width = std::min(unsigned(Width), unsigned(MaxSize));
-//    Height = std::min(unsigned(Height), unsigned(MaxSize));
+private:
+    virtual void draw(sf::RenderTarget& target, sf::RenderStates states) const
+    {
+        
+        states.transform *= getTransform();
+
+        target.draw(m_vertices, states);
+        /*
+        for(unsigned int y = 0; y < Height; y++)
+        {
+            for(unsigned int x = 0; x < Width; x++)
+            {
+//                Timer.Begin();
+//                float T = CurrentBuffer->at(GetCellIndex(x, y)).Temperature;
+                // TODO(tyler): A color lookup table instead of this messy algorithm may help speed.
+//                Rects[GetCellIndex(x, y)].setFillColor(hsv(T * 100.0 / 255.0, 0.9, 0.9));
+//                Window.draw(Rects[GetCellIndex(x, y)]);//, &CellTemperatureShader);
+//                Timer.End();
+                
+            }
+        }
+        */
+    }
+
+};
+
+grid::grid(unsigned int Width, unsigned int Height, sf::Vector2u CellSize)
+        :
+        Width(Width), Height(Height),
+        CurrentBuffer(&Buffers[0]), NextBuffer(&Buffers[1])
+{
+   
+
 
     CurrentBuffer->resize(Width * Height);
     NextBuffer->resize(Width * Height);
@@ -191,6 +214,30 @@ grid::grid(uint16_t Width, uint16_t Height)
 //        Cell.Resistance = RandomUInt8(mt);
     }
 
+    m_vertices.setPrimitiveType(sf::Quads);
+    m_vertices.resize(Width * Height * 4);
+
+    for(unsigned int y = 0; y < Height; y++)
+    {
+        for(unsigned int x = 0; x < Width; x++)
+        {
+            sf::Vertex* Quad = &m_vertices[4 * (y * Width + x)];
+
+            Quad[0].position = sf::Vector2f(x * CellSize.x, y * CellSize.y);
+            Quad[1].position = sf::Vector2f((x + 1) * CellSize.x, y * CellSize.y);
+            Quad[2].position = sf::Vector2f((x + 1) * CellSize.x, (y + 1) * CellSize.y);
+            Quad[3].position = sf::Vector2f(x * CellSize.x, (y + 1) * CellSize.y);
+
+            float T = CurrentBuffer->at(y * Width + x).Temperature;
+            sf::Color TemperatureColor = hsv(T * 100.0 / 255.0, 0.9, 0.9);
+            Quad[0].color = TemperatureColor;
+            Quad[1].color = TemperatureColor;
+            Quad[2].color = TemperatureColor;
+            Quad[3].color = TemperatureColor;
+        }
+    }
+
+    
     *NextBuffer = *CurrentBuffer;
 }
 
@@ -224,20 +271,20 @@ void grid::UpdateTemperature(int x, int y)
 
     // If the cell is not on the left border, it has a left neighbor.
     if(x != 0) Neighbors.push_back(&NextBuffer->at(GetCellIndex(x - 1, y)));
+        if(x != Width - 1) Neighbors.push_back(&NextBuffer->at(GetCellIndex(x + 1, y)));
     // If the cell is not on the up border, it has an up neighbor.
     if(y != 0) Neighbors.push_back(&NextBuffer->at(GetCellIndex(x, y - 1)));
     // ...
-    if(x != Width - 1) Neighbors.push_back(&NextBuffer->at(GetCellIndex(x + 1, y)));
     if(y != Height - 1) Neighbors.push_back(&NextBuffer->at(GetCellIndex(x, y + 1)));
 
-    float TemperatureSum = Neighbors.size() * NextBuffer->at(GetCellIndex(x, y)).Temperature;
+    float TemperatureSum = c * Neighbors.size() * NextBuffer->at(GetCellIndex(x, y)).Temperature;
 
     for(auto& Cell : Neighbors)
     {
         TemperatureSum += Cell->Temperature;
     }
 
-    NextBuffer->at(GetCellIndex(x, y)).Temperature = TemperatureSum / (Neighbors.size() * 2);
+    NextBuffer->at(GetCellIndex(x, y)).Temperature = TemperatureSum / (c * Neighbors.size() + Neighbors.size());
 //    Timer.End();
 }
 
@@ -278,7 +325,6 @@ void grid::ConductHeat()
         }
     }
     
-    *CurrentBuffer = *NextBuffer;
 #endif
     
     // Cells not touching a border
@@ -294,6 +340,8 @@ void grid::ConductHeat()
 //    Timer.End();
     //
 #endif
+
+        *CurrentBuffer = *NextBuffer;
 }
 
 void grid::OutputState()
@@ -311,14 +359,14 @@ int main()
     sf::RenderWindow Window(sf::VideoMode(WindowWidth, WindowHeight), "Window");
     Window.setFramerateLimit(60);
 
-    grid MainGrid(80, 80);
+    grid MainGrid(160, 160, {5, 5});
 
     bool start = false;
 
     uint64_t TimeSum = 0;
     uint64_t TimeCount = 0;
 
-    MainGrid.Draw(Window);
+    Window.draw(MainGrid);
     Window.display();
     
     while(Window.isOpen())
@@ -356,7 +404,8 @@ int main()
         
         Window.clear();
 
-        MainGrid.Draw(Window);
+        MainGrid.UpdateCellColors();
+        Window.draw(MainGrid);
         
         Window.display();
     }
