@@ -116,13 +116,26 @@ class grid : public sf::Drawable, public sf::Transformable
 public:
     uint16_t Width, Height;
 
+    sf::Vector2u CellSize;
+    
     std::vector<cell>* CurrentBuffer;
     std::vector<cell>* NextBuffer;
     std::vector<cell> Buffers[2];
 
     sf::Shader CellTemperatureShader;
 
-    
+    void Randomize()
+    {
+        std::random_device rd;
+        std::mt19937 mt(rd());
+        std::uniform_int_distribution<int> RandomUInt8(1, 255);
+        
+        for(auto& Cell : *CurrentBuffer)
+        {
+            Cell.Temperature = RandomUInt8(mt);
+//        Cell.Resistance = RandomUInt8(mt);
+        }
+    }
     
     unsigned int GetCellIndex(unsigned int x, unsigned int y)
     {
@@ -135,6 +148,32 @@ public:
     static const uint16_t MaxSize = 1000;
     
     grid(unsigned int Width, unsigned int Height, sf::Vector2u CellSize);
+
+    void SyncCellSize()
+    {
+        m_vertices.resize(Width * Height * 4);
+        
+        for(unsigned int y = 0; y < Height; y++)
+        {
+            for(unsigned int x = 0; x < Width; x++)
+            {
+                sf::Vertex* Quad = &m_vertices[4 * (y * Width + x)];
+
+                Quad[0].position = sf::Vector2f(x * CellSize.x, y * CellSize.y);
+                Quad[1].position = sf::Vector2f((x + 1) * CellSize.x, y * CellSize.y);
+                Quad[2].position = sf::Vector2f((x + 1) * CellSize.x, (y + 1) * CellSize.y);
+                Quad[3].position = sf::Vector2f(x * CellSize.x, (y + 1) * CellSize.y);
+
+                float T = CurrentBuffer->at(y * Width + x).Temperature;
+                sf::Color TemperatureColor = hsv(T * 100.0 / 255.0, 0.9, 0.9);
+                Quad[0].color = TemperatureColor;
+                Quad[1].color = TemperatureColor;
+                Quad[2].color = TemperatureColor;
+                Quad[3].color = TemperatureColor;
+            }
+        }   
+    }
+    
 
     
     void OutputState();
@@ -151,6 +190,7 @@ public:
 
     void UpdateCellColors()
     {
+        
         for(unsigned int y = 0; y < Height; y++)
         {
             for(unsigned int x = 0; x < Width; x++)
@@ -195,7 +235,7 @@ private:
 
 grid::grid(unsigned int Width, unsigned int Height, sf::Vector2u CellSize)
         :
-        Width(Width), Height(Height),
+        Width(Width), Height(Height), CellSize(CellSize),
         CurrentBuffer(&Buffers[0]), NextBuffer(&Buffers[1])
 {
    
@@ -215,28 +255,8 @@ grid::grid(unsigned int Width, unsigned int Height, sf::Vector2u CellSize)
     }
 
     m_vertices.setPrimitiveType(sf::Quads);
-    m_vertices.resize(Width * Height * 4);
 
-    for(unsigned int y = 0; y < Height; y++)
-    {
-        for(unsigned int x = 0; x < Width; x++)
-        {
-            sf::Vertex* Quad = &m_vertices[4 * (y * Width + x)];
-
-            Quad[0].position = sf::Vector2f(x * CellSize.x, y * CellSize.y);
-            Quad[1].position = sf::Vector2f((x + 1) * CellSize.x, y * CellSize.y);
-            Quad[2].position = sf::Vector2f((x + 1) * CellSize.x, (y + 1) * CellSize.y);
-            Quad[3].position = sf::Vector2f(x * CellSize.x, (y + 1) * CellSize.y);
-
-            float T = CurrentBuffer->at(y * Width + x).Temperature;
-            sf::Color TemperatureColor = hsv(T * 100.0 / 255.0, 0.9, 0.9);
-            Quad[0].color = TemperatureColor;
-            Quad[1].color = TemperatureColor;
-            Quad[2].color = TemperatureColor;
-            Quad[3].color = TemperatureColor;
-        }
-    }
-
+    SyncCellSize();
     
     *NextBuffer = *CurrentBuffer;
 }
@@ -398,6 +418,11 @@ int main()
         if(sf::Keyboard::isKeyPressed(sf::Keyboard::Space))
         {
             start = true;
+        }
+
+        if(sf::Keyboard::isKeyPressed(sf::Keyboard::R))
+        {
+            MainGrid.Randomize();
         }
 
         if(start == true) MainGrid.ConductHeat();
