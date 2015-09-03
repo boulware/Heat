@@ -4,6 +4,9 @@
 #include <random>
 #include <algorithm>
 #include <chrono>
+#include <fstream>
+#include <ctime>
+#include <iomanip>
 
 #include <SFML/Window.hpp>
 #include <SFML/Graphics.hpp>
@@ -17,13 +20,28 @@ static const float c = 1;
 struct timer
 {
 public:
-    timer(int n) : n(n), TimeCount(0), TimeSum(0) {}
+    timer(int n, std::string Note) : n(n), TimeCount(0), TimeSum(0), OptimizationLog("opt.txt", std::ios::app)
+    {
+        if(OptimizationLog.is_open())
+        {   
+            std::time_t t = std::time(nullptr);
+            
+            OptimizationLog << "\n---------- " << std::put_time(std::localtime(&t), "%c %Z") << " ----------\n";
+            OptimizationLog << "Note: " << Note << "\n\n";
+        }
+    }
+    ~timer()
+    {
+        OptimizationLog.close();
+    }
     
     uint64_t TimeCount;
     uint64_t TimeSum;
     sf::Clock Clock;
 
     uint64_t n;
+    uint64_t N;
+    std::ofstream OptimizationLog;
    
     float Average()
     {
@@ -31,7 +49,7 @@ public:
     }
     
     void Begin()
-    {
+    {   
         Clock.restart();
     }
     
@@ -40,16 +58,22 @@ public:
         TimeCount++;
         TimeSum += Clock.getElapsedTime().asMicroseconds();
 
-        if(TimeCount >= n)
-        {
+       if(TimeCount >= n)
+        {   
             std::cout << "Avg: " << Average() << "us [" << TimeCount << "]\n";
+
+            if(OptimizationLog.is_open())
+            {
+                OptimizationLog << "Avg: " << Average() << "us [" << TimeCount << "]\n";
+            }
+          
             TimeCount = 0;
             TimeSum = 0;
         }
     }
 };
 
-timer Timer(100);
+static timer Timer(1000000, "Single draw call with individual setFillColor call + draw(Rects[]) call (T on cell POD)");
 
 sf::Color hsv(int hue, float sat, float val)
 {
@@ -112,10 +136,12 @@ struct grid
         {
             for(int x = 0; x < Width; x++)
             {
+                Timer.Begin();
                 float T = CurrentBuffer->at(GetCellIndex(x, y)).Temperature;
                 // TODO(tyler): A color lookup table instead of this messy algorithm may help speed.
                 Rects[GetCellIndex(x, y)].setFillColor(hsv(T * 100.0 / 255.0, 0.9, 0.9));
                 Window.draw(Rects[GetCellIndex(x, y)]);
+                Timer.End();
             }
         }
     }
@@ -330,9 +356,7 @@ int main()
         
         Window.clear();
 
-        Timer.Begin();
         MainGrid.Draw(Window);
-        Timer.End();
         
         Window.display();
     }
