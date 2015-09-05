@@ -316,7 +316,7 @@ void grid::ConductHeat()
 int main()
 {   
     sf::RenderWindow Window(sf::VideoMode(WindowWidth, WindowHeight), "Window");
-    Window.setFramerateLimit(60);
+//    Window.setFramerateLimit(60);
 
     unsigned int GridDivider = 2;
     grid MainGrid(WindowWidth / GridDivider, WindowHeight / GridDivider, {GridDivider, GridDivider});
@@ -337,8 +337,10 @@ int main()
     Timer.AddDescriptor("cell_count", MainGrid.CurrentBuffer->size());
 
     while(Window.isOpen())
-    {        
+    {
+        Timer.Begin();
         sf::Event Event;
+        Timer.End();
         while(Window.pollEvent(Event))
         {
             if(Event.type == sf::Event::Closed) Window.close();
@@ -385,15 +387,15 @@ int main()
         
         if(start == true)
         {
-            Timer.Begin();
-            MainGrid.ConductHeat();
-            Timer.End();
+//            Timer.Begin();
+//            MainGrid.ConductHeat();
+//            Timer.End();
         }
         
         Window.clear();
 
 //        MainGrid.UpdateCellColors();
-        Window.draw(MainGrid);
+//        Window.draw(MainGrid);
         
         Window.display();
     }
