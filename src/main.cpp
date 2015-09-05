@@ -318,7 +318,8 @@ int main()
     sf::RenderWindow Window(sf::VideoMode(WindowWidth, WindowHeight), "Window");
     Window.setFramerateLimit(60);
 
-    grid MainGrid(1280, 720, {1, 1});
+    unsigned int GridDivider = 2;
+    grid MainGrid(WindowWidth / GridDivider, WindowHeight / GridDivider, {GridDivider, GridDivider});
 
     bool start = false;
 
