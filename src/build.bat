@@ -5,6 +5,8 @@ set PROJECTNAME=heat
 mkdir ..\..\build\%PROJECTNAME%
 pushd ..\..\build\%PROJECTNAME%
 cl -O2 -FC -Zi -EHsc -MD ..\..\%PROJECTNAME%\src\main.cpp^
+ ../../_tools/_personal/timer.cpp^
+ -I ../../_tools/_personal^
  -I ../../_tools/SFML-2.3/include^
  -I ../../_tools/glew-1.13.0/include^
  -I ../../_tools/freeglut-2.8.1/include^
