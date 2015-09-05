@@ -17,7 +17,7 @@ static const uint8_t CellOffset = 1; // [m]
 static const uint16_t WindowWidth = 1280;
 static const uint16_t WindowHeight = 720;
 
-static const float c = 20;
+static const float c = 0.1;
 
 sf::Color hsv(int hue, float sat, float val)
 {
@@ -51,8 +51,8 @@ sf::Color hsv(int hue, float sat, float val)
 
 struct cell
 {
-    float Temperature; // [K]
-    float Resistance; // [(m*K)/W]
+    double Temperature; // [K]
+    double InverseConductivity; // [(m*K)/W]
 };
 
 class grid : public sf::Drawable, public sf::Transformable
@@ -72,31 +72,28 @@ public:
     {
         std::random_device rd;
         std::mt19937 mt(rd());
-        std::uniform_real_distribution<float> RandomSingle(0.0, 1.0);
+        std::uniform_real_distribution<float> RandomSingleN(0.0, 1.0);
+        std::uniform_real_distribution<float> RandomSingle1000(0.0, 1000.0);
         
         for(auto& Cell : *CurrentBuffer)
         {
-            Cell.Temperature = RandomSingle(mt);
-//        Cell.Resistance = RandomUInt8(mt);
+//            Cell.Temperature = RandomSingleN(mt);
+//            Cell.InverseConductivity = RandomSingleN(mt);
+            Cell.Temperature = RandomSingle1000(mt);
+            Cell.InverseConductivity = RandomSingle1000(mt);
         }
     }
-    
-    unsigned int GetCellIndex(unsigned int x, unsigned int y)
-    {
-        unsigned int Index = (y * Width) + x;
 
-        // TODO(tyler): Clean this up.
-        if(Index < Width * Height)
+    cell* GetCell(uint16_t x, uint16_t y)
+    {
+        if(x > Width || y > Height)
         {
-            return (y * Width) + x;
+            return nullptr;
         }
-        else
-        {
-            return 0;
-        }
+
+        return &CurrentBuffer->at(y * Width + x);
     }
     
-//    std::vector<sf::RectangleShape> Rects;
     sf::VertexArray m_vertices;
     
     static const uint16_t MaxSize = 1000;
@@ -105,13 +102,17 @@ public:
 
     void SetCellTemperatureArea(int CellX, int CellY, float Temperature)
     {
-        unsigned int HalfSize = 5;
+        unsigned int HalfSize = 1;
         
         for(unsigned int y = CellY - HalfSize; y < CellY + HalfSize; y++)
         {
             for(unsigned int x = CellX - HalfSize; x < CellX + HalfSize; x++)
             {
-                CurrentBuffer->at(GetCellIndex(x, y)).Temperature = Temperature;
+                cell* CurrentCell = GetCell(x, y);
+                if(CurrentCell)
+                {
+                    CurrentCell->Temperature = Temperature;
+                }
             }
         }
     }
@@ -192,14 +193,62 @@ grid::grid(unsigned int Width, unsigned int Height, sf::Vector2u CellSize)
     
     std::random_device rd;
     std::mt19937 mt(rd());
-    std::uniform_real_distribution<float> RandomSingle(0.0, 1.0);
+    std::uniform_real_distribution<float> RandomSingleN(0.0, 1.0);
+    std::uniform_real_distribution<float> RandomSingleNSafe(0.5, 1.0);
 
+        /*
     for(auto& Cell : *CurrentBuffer)
     {
-        Cell.Temperature = RandomSingle(mt);
-//        Cell.Resistance = RandomUInt8(mt);
+        Cell.Temperature = RandomSingleN(mt);
+        Cell.InverseConductivity = RandomSingleNSafe(mt);
+    }
+        */
+
+    for(int x = 0; x < Width/2; x++)
+    {
+        for(int y = 0; y < Height; y++)
+        {
+            cell* CurrentCell = GetCell(x, y);
+
+            if(CurrentCell != nullptr)
+            {
+                CurrentCell->Temperature = 1.0;
+                CurrentCell->InverseConductivity = 0.5;
+            }
+        }
     }
 
+    for(int x = Width/2; x < Width; x++)
+    {
+        for(int y = 0; y < Height; y++)
+        {
+            cell* CurrentCell = GetCell(x, y);
+
+            if(CurrentCell)
+            {
+                CurrentCell->Temperature = 0.0;
+                CurrentCell->InverseConductivity = 0.5;
+            }
+        }
+    }
+    /*    
+    int x = Width/2;
+    for(int y = 0; y < Height; y++)
+    {
+        cell* CurrentCell = GetCell(x, y);
+
+        
+        if(CurrentCell != nullptr && (y < 2 || y > 2))
+        {
+            CurrentCell->Temperature = 2.0;
+            CurrentCell->InverseConductivity = 100000;
+        }
+        else
+        {
+            CurrentCell->InverseConductivity = 0.5;
+        }
+    }
+    */
     m_vertices.setPrimitiveType(sf::Quads);
 
     SyncCellSize();
@@ -209,39 +258,55 @@ grid::grid(unsigned int Width, unsigned int Height, sf::Vector2u CellSize)
 
 void grid::TransferCellHeat(int Source, int Target)
 {
-//    Timer.Begin();
-    float dT = CurrentBuffer->at(Target).Temperature - CurrentBuffer->at(Source).Temperature;
-//    float R = CurrentCells[Target].Resistance + CurrentCells[Source].Resistance;
-    float R = 256;
-    float q = c * dT / R;
+    double dT = CurrentBuffer->at(Target).Temperature - CurrentBuffer->at(Source).Temperature;
+    double R = CurrentBuffer->at(Target).InverseConductivity + CurrentBuffer->at(Source).InverseConductivity;
+    double Q = c * (dT / R);
+
+    float MinimumHeatExchange = 0.01;
     
-    if(abs(q) < 0.4 * abs(dT))
+    if(Q >= MinimumHeatExchange)
     {
-        NextBuffer->at(Target).Temperature -= q;
-        NextBuffer->at(Source).Temperature += q;
+        if(abs(Q) < 0.5 * abs(dT))
+        {
+            NextBuffer->at(Target).Temperature -= Q;
+            NextBuffer->at(Source).Temperature += Q;
+        }
+        else
+        {
+            float AverageT = (CurrentBuffer->at(Target).Temperature + CurrentBuffer->at(Source).Temperature) / 2.0;
+                        
+            NextBuffer->at(Target).Temperature = AverageT;
+            NextBuffer->at(Source).Temperature = AverageT;
+        }
     }
     else
     {
-        float AverageT = (CurrentBuffer->at(Target).Temperature + CurrentBuffer->at(Source).Temperature) / 2.0;
-                        
-        NextBuffer->at(Target).Temperature = AverageT;
-        NextBuffer->at(Source).Temperature = AverageT;
+        
     }
-//    Timer.End();
 }
-
+/*
 void grid::UpdateTemperature(int x, int y)
 {
-//    Timer.Begin();
-    std::vector<cell*> Neighbors;
+    uint8_t NeighborCount;
+    float TemperatureSum = 0.0;
 
     // If the cell is not on the left border, it has a left neighbor.
-    if(x != 0) Neighbors.push_back(&NextBuffer->at(GetCellIndex(x - 1, y)));
-        if(x != Width - 1) Neighbors.push_back(&NextBuffer->at(GetCellIndex(x + 1, y)));
-    // If the cell is not on the up border, it has an up neighbor.
-    if(y != 0) Neighbors.push_back(&NextBuffer->at(GetCellIndex(x, y - 1)));
-    // ...
-    if(y != Height - 1) Neighbors.push_back(&NextBuffer->at(GetCellIndex(x, y + 1)));
+    std::vector<cell*> Neighbors(4, nullptr);
+
+    Neighbors.push_back(GetCell(x - 1, y));
+    Neighbors.push_back(GetCell(x + 1, y));
+    Neighbors.push_back(GetCell(x, y - 1));
+    Neighbors.push_back(GetCell(x, y + 1));
+
+    for(auto& neighbor : Neighbors)
+    {
+        if(neighbor != nullptr)
+        {
+            TemperatureSum += neighbor.Temperature;
+            NeighborCount++;
+        }
+    }
+    
 
     float TemperatureSum = c * Neighbors.size() * NextBuffer->at(GetCellIndex(x, y)).Temperature;
 
@@ -251,9 +316,8 @@ void grid::UpdateTemperature(int x, int y)
     }
 
     NextBuffer->at(GetCellIndex(x, y)).Temperature = TemperatureSum / (c * Neighbors.size() + Neighbors.size());
-//    Timer.End();
 }
-
+*/
 void grid::ConductHeat()
 {
     
@@ -290,13 +354,10 @@ void grid::ConductHeat()
             }
         }
     }
-
-    UpdateCellColors();
     
 #endif
     
 #if 0
-//    Timer.Begin();
     for(int y = 0; y < Height; y++)
     {
         for(int x = 0; x < Width; x++)
@@ -305,20 +366,24 @@ void grid::ConductHeat()
         }
     }
 
-    UpdateCellColors();
-//    Timer.End();
-    //
 #endif
 
+    UpdateCellColors();
+    
         *CurrentBuffer = *NextBuffer;
 }
 
 int main()
 {   
     sf::RenderWindow Window(sf::VideoMode(WindowWidth, WindowHeight), "Window");
-//    Window.setFramerateLimit(60);
+    
+    Window.setFramerateLimit(60);
 
-    unsigned int GridDivider = 2;
+    // GD = 2
+    // TransferCellHeat() -> 42FPS
+    // UpdateTemperature() -> 12FPS
+    
+    unsigned int GridDivider = 10;
     grid MainGrid(WindowWidth / GridDivider, WindowHeight / GridDivider, {GridDivider, GridDivider});
 
     bool start = false;
@@ -335,17 +400,16 @@ int main()
     Timer.AddDescriptor("function", "ConductHeat");
     Timer.AddDescriptor("pixel_count", WindowWidth * WindowHeight);
     Timer.AddDescriptor("cell_count", MainGrid.CurrentBuffer->size());
-
+    
     while(Window.isOpen())
     {
-        Timer.Begin();
         sf::Event Event;
-        Timer.End();
         while(Window.pollEvent(Event))
         {
             if(Event.type == sf::Event::Closed) Window.close();
         }
 
+        
         if(Window.hasFocus())
         {
             if(sf::Mouse::isButtonPressed(sf::Mouse::Left))
@@ -353,8 +417,6 @@ int main()
                 sf::Vector2i MousePosition = sf::Mouse::getPosition(Window);
                 MousePosition.x = std::max(0, std::min(MousePosition.x, WindowWidth - 1));
                 MousePosition.y = std::max(0, std::min(MousePosition.y, WindowHeight - 1));
-            
-//            MainGrid.CurrentBuffer->at(MainGrid.GetCellIndex(MousePosition.x / (WindowWidth / MainGrid.Width), MousePosition.y / (WindowHeight / MainGrid.Height))).Temperature = 0;
 
                 int CellX = MousePosition.x / (WindowWidth / MainGrid.Width);
                 int CellY = MousePosition.y / (WindowHeight / MainGrid.Height);
@@ -370,7 +432,6 @@ int main()
                 int CellX = MousePosition.x / (WindowWidth / MainGrid.Width);
                 int CellY = MousePosition.y / (WindowHeight / MainGrid.Height);
                 MainGrid.SetCellTemperatureArea(CellX, CellY, 0.0);
-//                MainGrid.CurrentBuffer->at(MainGrid.GetCellIndex(MousePosition.x / (WindowWidth / MainGrid.Width), MousePosition.y / (WindowHeight / MainGrid.Height))).Temperature = 255;
             }
 
             if(sf::Keyboard::isKeyPressed(sf::Keyboard::Space))
@@ -383,25 +444,17 @@ int main()
                 MainGrid.Randomize();
             }
         }
-
         
         if(start == true)
         {
-//            Timer.Begin();
-//            MainGrid.ConductHeat();
-//            Timer.End();
+            MainGrid.ConductHeat();
         }
         
         Window.clear();
 
-//        MainGrid.UpdateCellColors();
-//        Window.draw(MainGrid);
+        Window.draw(MainGrid);
         
         Window.display();
+
     }
-
-//    std::cout << "Timer: " << ( << "us [n = " << TimeCount << "]\n> ";
-
-    std::string Comment;
-//    std::getline(std::cin, Comment);
 }
