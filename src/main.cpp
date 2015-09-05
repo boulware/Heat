@@ -17,64 +17,6 @@ static const uint16_t WindowHeight = 720;
 
 static const float c = 20;
 
-struct timer
-{
-public:
-    timer(int n, std::string Note) : n(n), TimeCount(0), TimeSum(0), OptimizationLog("opt.txt", std::ios::app)
-    {
-        if(OptimizationLog.is_open())
-        {   
-            std::time_t t = std::time(nullptr);
-            
-            OptimizationLog << "\n---------- " << std::put_time(std::localtime(&t), "%c %Z") << " ----------\n";
-            OptimizationLog << "Note: " << Note << "\n\n";
-        }
-    }
-    ~timer()
-    {
-        OptimizationLog.close();
-    }
-    
-    uint64_t TimeCount;
-    uint64_t TimeSum;
-    sf::Clock Clock;
-
-    uint64_t n;
-    uint64_t N;
-    std::ofstream OptimizationLog;
-   
-    float Average()
-    {
-        return float(TimeSum) / float(TimeCount);
-    }
-    
-    void Begin()
-    {   
-        Clock.restart();
-    }
-    
-    void End()
-    {
-        TimeCount++;
-        TimeSum += Clock.getElapsedTime().asMicroseconds();
-
-       if(TimeCount >= n)
-        {   
-            std::cout << "Avg: " << Average() << "us [" << TimeCount << "]\n";
-
-            if(OptimizationLog.is_open())
-            {
-                OptimizationLog << "Avg: " << Average() << "us [" << TimeCount << "]\n";
-            }
-          
-            TimeCount = 0;
-            TimeSum = 0;
-        }
-    }
-};
-
-//static timer Timer(1000000, "Single draw call with individual setFillColor call + draw(Rects[]) call (T on cell POD)");
-
 sf::Color hsv(int hue, float sat, float val)
 {
   hue %= 360;
