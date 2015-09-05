@@ -11,6 +11,8 @@
 #include <SFML/Window.hpp>
 #include <SFML/Graphics.hpp>
 
+#include <timer.hpp>
+
 static const uint8_t CellOffset = 1; // [m]
 static const uint16_t WindowWidth = 1280;
 static const uint16_t WindowHeight = 720;
@@ -254,7 +256,7 @@ void grid::UpdateTemperature(int x, int y)
 
 void grid::ConductHeat()
 {
-    // SwapBuffers();
+    
     *NextBuffer = *CurrentBuffer;
 
 #if 1
@@ -293,7 +295,6 @@ void grid::ConductHeat()
     
 #endif
     
-    // Cells not touching a border
 #if 0
 //    Timer.Begin();
     for(int y = 0; y < Height; y++)
@@ -313,7 +314,7 @@ void grid::ConductHeat()
 }
 
 int main()
-{
+{   
     sf::RenderWindow Window(sf::VideoMode(WindowWidth, WindowHeight), "Window");
     Window.setFramerateLimit(60);
 
@@ -327,6 +328,13 @@ int main()
     Window.draw(MainGrid);
     Window.display();
     
+    xish::timer Timer;
+    Timer.AddDescriptor("opt_level", "O2");
+    Timer.AddDescriptor("build", "r");
+    Timer.AddDescriptor("function", "ConductHeat");
+    Timer.AddDescriptor("pixel_count", WindowWidth * WindowHeight);
+    Timer.AddDescriptor("cell_count", MainGrid.CurrentBuffer->size());
+
     while(Window.isOpen())
     {        
         sf::Event Event;
@@ -372,7 +380,14 @@ int main()
                 MainGrid.Randomize();
             }
         }
-        if(start == true) MainGrid.ConductHeat();
+
+        
+        if(start == true)
+        {
+            Timer.Begin();
+            MainGrid.ConductHeat();
+            Timer.End();
+        }
         
         Window.clear();
 
