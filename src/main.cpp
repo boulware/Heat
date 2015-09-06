@@ -12,12 +12,8 @@
 #include <SFML/Graphics.hpp>
 
 #include <timer.hpp>
+#include "constants.hpp"
 
-static const uint8_t CellOffset = 1; // [m]
-static const uint16_t WindowWidth = 1280;
-static const uint16_t WindowHeight = 720;
-
-static const float c = 0.1;
 
 sf::Color hsv(int hue, float sat, float val)
 {
