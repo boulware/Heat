@@ -1,0 +1,4 @@
+*Contour lines?
+*Convection
+-Heat sources
+*Figure out stability issues with fast conduction speeds
