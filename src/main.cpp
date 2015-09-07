@@ -1,456 +1,500 @@
-#include <cstdint>
+//#include <vector>
+#include <thread>
 #include <iostream>
-#include <vector>
-#include <random>
-#include <algorithm>
-#include <chrono>
-#include <fstream>
-#include <ctime>
-#include <iomanip>
+#include <mutex>
+#include <string>
 
-#include <SFML/Window.hpp>
 #include <SFML/Graphics.hpp>
+#include <SFML/Window.hpp>
+#include <SFML/System.hpp>
 
-#include <timer.hpp>
 #include "constants.hpp"
 
+#include "cell.hpp"
+#include "cell_grid.hpp"
 
-sf::Color hsv(int hue, float sat, float val)
+static void PixelsToCellCoords(int X, int Y, int& CellX, int& CellY, cell_grid& Grid)
 {
-  hue %= 360;
-  while(hue<0) hue += 360;
-
-  if(sat<0.f) sat = 0.f;
-  if(sat>1.f) sat = 1.f;
-
-  if(val<0.f) val = 0.f;
-  if(val>1.f) val = 1.f;
-
-  int h = hue/60;
-  float f = float(hue)/60-h;
-  float p = val*(1.f-sat);
-  float q = val*(1.f-sat*f);
-  float t = val*(1.f-sat*(1-f));
-
-  switch(h)
-  {
-    default:
-    case 0:
-    case 6: return sf::Color(val*255, t*255, p*255);
-    case 1: return sf::Color(q*255, val*255, p*255);
-    case 2: return sf::Color(p*255, val*255, t*255);
-    case 3: return sf::Color(p*255, q*255, val*255);
-    case 4: return sf::Color(t*255, p*255, val*255);
-    case 5: return sf::Color(val*255, p*255, q*255);
-  }
+    CellX = X / (constants::WindowWidth / Grid.mWidth);
+    CellY = Y / (constants::WindowHeight / Grid.mHeight);
 }
 
-struct cell
+static std::mutex CountMutex;
+
+static void LoopStepSubCollection(bool* Quit, unsigned int* ExecutionCount, cell_grid* Grid, unsigned int MinIndex, unsigned int MaxIndex)
+{   
+    while(!(*Quit))
+    {
+        Grid->StepSubCollection(MinIndex, MaxIndex);
+
+        CountMutex.lock();
+        (*ExecutionCount)++;
+        CountMutex.unlock();
+    }
+}
+
+class temperature_scale : public sf::Drawable, public sf::Transformable
 {
-    double Temperature; // [K]
-    double InverseConductivity; // [(m*K)/W]
+private:
+    sf::FloatRect mRect;
+    float mMinTemp, mMaxTemp;
+    sf::Text mMinText, mMaxText;
+    sf::Texture mTexture;
+    sf::Sprite mSprite;
+
+    virtual void draw(sf::RenderTarget& target, sf::RenderStates states) const
+    {       
+        states.transform *= getTransform();
+
+        target.draw(mSprite, states);
+        target.draw(mMinText, states);
+        target.draw(mMaxText, states);
+    }
+ 
+public:
+    temperature_scale(float MinTemp, float MaxTemp, sf::FloatRect Rect)
+            :
+            mMinTemp(MinTemp), mMaxTemp(MaxTemp),
+            mMinText(std::to_string(static_cast<int>(MinTemp)), constants::fontCourierNew, 18),
+            mMaxText(std::to_string(static_cast<int>(MaxTemp)), constants::fontCourierNew, 18),
+            mRect(Rect)
+    {
+        setPosition(mRect.left, mRect.top);
+        mSprite.setPosition(0, 0);
+        mSprite.setScale(mRect.width / static_cast<float>(constants::Colors.size() / 4), mRect.height);
+//        
+        
+        sf::Image Image;
+        Image.create(constants::Colors.size() / 4, 1, constants::Colors.data());
+        
+        if(!mTexture.loadFromImage(Image))
+        {
+            std::cout << "\nFailed to load texture";
+        }
+
+        mSprite.setTexture(mTexture);
+
+        float TextYOffset = 5.0;
+        float TextXOffset = 5.0;
+        
+        mMinText.setOrigin(0.f, 18.f);
+        mMinText.setPosition(TextXOffset, -TextYOffset);
+
+        mMaxText.setOrigin(mMinText.getLocalBounds().width, 18.f);
+        mMaxText.setPosition(mRect.width - TextXOffset, -TextYOffset);
+    }
+   
 };
 
-class grid : public sf::Drawable, public sf::Transformable
+enum class phase
 {
+    Invalid,
+    Solid,
+    Liquid,
+    Gas,
+};
+
+static std::string PhaseToString(phase Phase)
+{
+    std::string PhaseString;
+    
+    switch(Phase)
+    {
+        case(phase::Invalid): PhaseString = "Invalid"; break;
+        case(phase::Solid): PhaseString = "Solid"; break;
+        case(phase::Liquid): PhaseString = "Liquid"; break;
+        case(phase::Gas): PhaseString = "Gas"; break;
+    }
+
+    return PhaseString;
+}
+
+struct material
+{
+    float Resistance;
+    float MeltingPoint;
+    float BoilingPoint;
+};
+
+static phase GetMaterialPhase(material& Material, float Temperature, float Pressure = 0)
+{
+    if(Temperature < Material.MeltingPoint) return phase::Solid;
+    else if(Temperature < Material.BoilingPoint) return phase::Liquid;
+    else return phase::Gas;
+}
+
+class component
+{
+private:
+    phase Phase;
 public:
-    uint16_t Width, Height;
+    std::vector<sf::Vector2u> Positions;
+    float Temperature;
+    material Material;
 
-    sf::Vector2u CellSize;
-    
-    std::vector<cell>* CurrentBuffer;
-    std::vector<cell>* NextBuffer;
-    std::vector<cell> Buffers[2];
-
-    sf::Shader CellTemperatureShader;
-
-    void Randomize()
+    phase GetPhase() const {return Phase;}
+    void UpdatePhase()
     {
-        std::random_device rd;
-        std::mt19937 mt(rd());
-        std::uniform_real_distribution<float> RandomSingleN(0.0, 1.0);
-        std::uniform_real_distribution<float> RandomSingle1000(0.0, 1000.0);
-        
-        for(auto& Cell : *CurrentBuffer)
+        Phase = GetMaterialPhase(Material, Temperature);
+    }
+};
+
+struct environment
+{
+    float Temperature;
+    float Resistance;
+};
+
+#include <fstream>
+class item : public sf::Drawable, public sf::Transformable
+{
+private:
+    cell_grid mHeatGrid;
+    environment mCurrentEnvironment;
+    std::vector<sf::Vector2u> mEnvironmentCellCoordinates;
+    // TODO(tyler): ComponentMaps is not really a good name.
+    std::map<char, component> mComponentMaps;
+public:
+    item(std::string ItemFile, environment SpawnEnvironment);
+
+    virtual void draw(sf::RenderTarget& target, sf::RenderStates states) const;
+    
+    void ResetEnvironmentCells()
+    {
+        for(auto& env_cell_position : mEnvironmentCellCoordinates)
         {
-//            Cell.Temperature = RandomSingleN(mt);
-//            Cell.InverseConductivity = RandomSingleN(mt);
-            Cell.Temperature = RandomSingle1000(mt);
-            Cell.InverseConductivity = RandomSingle1000(mt);
+            mHeatGrid.SetCell(env_cell_position.x, env_cell_position.y, mCurrentEnvironment.Temperature, mCurrentEnvironment.Resistance);
         }
     }
-
-    cell* GetCell(uint16_t x, uint16_t y)
+    
+    void Update()
     {
-        if(x > Width || y > Height)
+        ResetEnvironmentCells();
+        for(auto& component_map : mComponentMaps)
         {
-            return nullptr;
-        }
+            component& Component = component_map.second;
 
-        return &CurrentBuffer->at(y * Width + x);
+            Component.UpdatePhase();
+        }
+        mHeatGrid.StepSubCollection();
+        mHeatGrid.UpdateCellColors();
+    }
+
+    environment& GetEnvironment()
+    {
+        return mCurrentEnvironment;
     }
     
-    sf::VertexArray m_vertices;
-    
-    static const uint16_t MaxSize = 1000;
-    
-    grid(unsigned int Width, unsigned int Height, sf::Vector2u CellSize);
-
-    void SetCellTemperatureArea(int CellX, int CellY, float Temperature)
+    void SetEnvironment(environment TargetEnvironment)
     {
-        unsigned int HalfSize = 1;
-        
-        for(unsigned int y = CellY - HalfSize; y < CellY + HalfSize; y++)
+        mCurrentEnvironment = TargetEnvironment;
+        ResetEnvironmentCells();
+    }
+
+    // TODO(tyler): ComponentID is intrinsically linked to a MaterialID, which is not a good thing.
+    float GetComponentTemperature(char ComponentID)
+    {
+        if(mComponentMaps.find(ComponentID) != mComponentMaps.end())
         {
-            for(unsigned int x = CellX - HalfSize; x < CellX + HalfSize; x++)
+            // The component exists in this item
+            float TemperatureSum = 0;
+
+            for(auto& cell_position : mComponentMaps[ComponentID].Positions)
             {
-                cell* CurrentCell = GetCell(x, y);
-                if(CurrentCell)
+                TemperatureSum += mHeatGrid.GetCell(cell_position.x, cell_position.y)->Temperature;
+            }
+
+            return TemperatureSum / (float)mComponentMaps[ComponentID].Positions.size();
+        }
+        else
+        {
+            // The component is not a component of this item
+            std::cout << "\nTried to get an item's component's temperature, but the component was not a part of that item!";
+
+            return -1.0;
+        }
+    }
+
+    phase GetComponentPhase(char ComponentID)
+    {
+        if(mComponentMaps.find(ComponentID) != mComponentMaps.end())
+        {
+            // The component exists in this item
+            return mComponentMaps[ComponentID].GetPhase();
+        }
+        else
+        {
+            // The component is not a component of this item
+            std::cout << "\nTried to get an item's component's phase, but the component was not a part of that item!";
+
+            return phase::Invalid;
+        }        
+    }
+};
+
+item::item(std::string ItemFilePath, environment SpawnEnvironment)
+        :
+        mCurrentEnvironment(SpawnEnvironment)
+{
+
+    
+    // NOTE(tyler): All of this should probably be moved into a chained call to a cell_grid constructor.
+    std::ifstream ItemFile(ItemFilePath);
+
+    unsigned int ItemWidth = 0;
+    unsigned int ItemHeight = 0;
+
+    // TODO(tyler): Implement a check so that all grid cells must be connected? Maybe not?
+    if(ItemFile.is_open())
+    {
+        std::string Line;
+
+        // NOTE(tyler): It might be a good idea to check during this loop whether there are invalid materials.
+        while(ItemFile >> Line)
+        {
+            ItemWidth = std::max(ItemWidth, (unsigned)Line.length());
+            ItemHeight++;
+        } 
+
+        mHeatGrid = cell_grid(ItemWidth, ItemHeight);
+        mHeatGrid.c = 1.0;
+        mHeatGrid.MinTemp = 273.0;
+        mHeatGrid.MaxTemp = 373.0;
+    
+        ItemFile.clear();
+        ItemFile.seekg(0, ItemFile.beg);
+        char CellID;
+        unsigned int CellX = 0;
+        unsigned int CellY = 0;
+        
+        while(ItemFile >> std::noskipws >> CellID)
+        {
+            switch(CellID)
+            {
+                case('\n'):
                 {
-                    CurrentCell->Temperature = Temperature;
+                    CellY++;
+                    CellX = 0;
+                } break;
+                case('W'):
+                {
+                    // NOTE(tyler): If the material has not yet been found, add it to the list of components in the item
+                    if(mComponentMaps.find(CellID) == mComponentMaps.end())
+                    {
+                        component Contents;
+                        material Water = {1.8, 273.0, 373.0};
+                        Contents.Material = Water;
+                        mComponentMaps.insert(std::pair<char, component>(CellID, Contents));
+                    }
+                    
+                    mHeatGrid.SetCell(CellX, CellY, mCurrentEnvironment.Temperature, mComponentMaps[CellID].Material.Resistance);
+                    mComponentMaps[CellID].Positions.push_back({CellX, CellY});
+                    
+                    CellX++;
+                } break;
+                case('S'):
+                {
+                    if(mComponentMaps.find(CellID) == mComponentMaps.end())
+                    {
+                        component Container;
+                        material Styrofoam = {1000.0, 513.0, 1e3};
+                        Container.Material = Styrofoam;
+                        mComponentMaps.insert(std::pair<char, component>(CellID, Container));
+                    }
+                    
+                    mHeatGrid.SetCell(CellX, CellY, mCurrentEnvironment.Temperature, mComponentMaps[CellID].Material.Resistance);
+                    mComponentMaps[CellID].Positions.push_back({CellX, CellY});
+
+                    CellX++;
+                } break;
+                case('.'):
+                {
+                    mHeatGrid.SetCell(CellX, CellY, mCurrentEnvironment.Temperature, mCurrentEnvironment.Resistance);
+                    mEnvironmentCellCoordinates.push_back({CellX, CellY});
+                    CellX++;
                 }
             }
-        }
-    }
-    
-    void SyncCellSize()
-    {
-        m_vertices.resize(Width * Height * 4);
-        
-        for(unsigned int y = 0; y < Height; y++)
-        {
-            for(unsigned int x = 0; x < Width; x++)
-            {
-                sf::Vertex* Quad = &m_vertices[4 * (y * Width + x)];
-
-                Quad[0].position = sf::Vector2f(x * CellSize.x, y * CellSize.y);
-                Quad[1].position = sf::Vector2f((x + 1) * CellSize.x, y * CellSize.y);
-                Quad[2].position = sf::Vector2f((x + 1) * CellSize.x, (y + 1) * CellSize.y);
-                Quad[3].position = sf::Vector2f(x * CellSize.x, (y + 1) * CellSize.y);
-
-                float T = CurrentBuffer->at(y * Width + x).Temperature;
-                sf::Color TemperatureColor = hsv(T * 100.0, 0.9, 0.9);
-                Quad[0].color = TemperatureColor;
-                Quad[1].color = TemperatureColor;
-                Quad[2].color = TemperatureColor;
-                Quad[3].color = TemperatureColor;
-            }
-        }   
-    }
-    
-    void OutputState();
-    void TransferCellHeat(int Source, int Target);
-    void ConductHeat();
-    void UpdateTemperature(int x, int y);
-
-    void SwapBuffers()
-    {
-        std::vector<cell>* Temp = CurrentBuffer;
-        CurrentBuffer = NextBuffer;
-        NextBuffer = Temp;
-    }
-
-    void UpdateCellColors()
-    {
-        
-        for(unsigned int y = 0; y < Height; y++)
-        {
-            for(unsigned int x = 0; x < Width; x++)
-            {
-                sf::Vertex* Quad = &m_vertices[4 * (y * Width + x)];
-
-                float T = CurrentBuffer->at(y * Width + x).Temperature;
-                sf::Color TemperatureColor = hsv(T * 100.0, 0.9, 0.9);
-                Quad[0].color = TemperatureColor;
-                Quad[1].color = TemperatureColor;
-                Quad[2].color = TemperatureColor;
-                Quad[3].color = TemperatureColor;
-            }
-        }
-    }
-    
-private:
-    virtual void draw(sf::RenderTarget& target, sf::RenderStates states) const
-    {
-        states.transform *= getTransform();
-        
-        target.draw(m_vertices, states);
-    }
-
-};
-
-grid::grid(unsigned int Width, unsigned int Height, sf::Vector2u CellSize)
-        :
-        Width(Width), Height(Height), CellSize(CellSize),
-        CurrentBuffer(&Buffers[0]), NextBuffer(&Buffers[1])
-{
-    CurrentBuffer->resize(Width * Height);
-    NextBuffer->resize(Width * Height);
-    
-    std::random_device rd;
-    std::mt19937 mt(rd());
-    std::uniform_real_distribution<float> RandomSingleN(0.0, 1.0);
-    std::uniform_real_distribution<float> RandomSingleNSafe(0.5, 1.0);
-
-        /*
-    for(auto& Cell : *CurrentBuffer)
-    {
-        Cell.Temperature = RandomSingleN(mt);
-        Cell.InverseConductivity = RandomSingleNSafe(mt);
-    }
-        */
-
-    for(int x = 0; x < Width/2; x++)
-    {
-        for(int y = 0; y < Height; y++)
-        {
-            cell* CurrentCell = GetCell(x, y);
-
-            if(CurrentCell != nullptr)
-            {
-                CurrentCell->Temperature = 1.0;
-                CurrentCell->InverseConductivity = 0.5;
-            }
-        }
-    }
-
-    for(int x = Width/2; x < Width; x++)
-    {
-        for(int y = 0; y < Height; y++)
-        {
-            cell* CurrentCell = GetCell(x, y);
-
-            if(CurrentCell)
-            {
-                CurrentCell->Temperature = 0.0;
-                CurrentCell->InverseConductivity = 0.5;
-            }
-        }
-    }
-    /*    
-    int x = Width/2;
-    for(int y = 0; y < Height; y++)
-    {
-        cell* CurrentCell = GetCell(x, y);
-
-        
-        if(CurrentCell != nullptr && (y < 2 || y > 2))
-        {
-            CurrentCell->Temperature = 2.0;
-            CurrentCell->InverseConductivity = 100000;
-        }
-        else
-        {
-            CurrentCell->InverseConductivity = 0.5;
-        }
-    }
-    */
-    m_vertices.setPrimitiveType(sf::Quads);
-
-    SyncCellSize();
-    
-    *NextBuffer = *CurrentBuffer;
-}
-
-void grid::TransferCellHeat(int Source, int Target)
-{
-    double dT = CurrentBuffer->at(Target).Temperature - CurrentBuffer->at(Source).Temperature;
-    double R = CurrentBuffer->at(Target).InverseConductivity + CurrentBuffer->at(Source).InverseConductivity;
-    double Q = c * (dT / R);
-
-    float MinimumHeatExchange = 0.01;
-    
-    if(Q >= MinimumHeatExchange)
-    {
-        if(abs(Q) < 0.5 * abs(dT))
-        {
-            NextBuffer->at(Target).Temperature -= Q;
-            NextBuffer->at(Source).Temperature += Q;
-        }
-        else
-        {
-            float AverageT = (CurrentBuffer->at(Target).Temperature + CurrentBuffer->at(Source).Temperature) / 2.0;
-                        
-            NextBuffer->at(Target).Temperature = AverageT;
-            NextBuffer->at(Source).Temperature = AverageT;
         }
     }
     else
     {
-        
+        std::cout << "\nFailed to open " << ItemFilePath;
     }
+
+
+    std::cout << "\nItem size is (" << ItemWidth << ", " << ItemHeight << ")";
 }
-/*
-void grid::UpdateTemperature(int x, int y)
+
+void item::draw(sf::RenderTarget& target, sf::RenderStates states) const
 {
-    uint8_t NeighborCount;
-    float TemperatureSum = 0.0;
+    states.transform *= getTransform();
 
-    // If the cell is not on the left border, it has a left neighbor.
-    std::vector<cell*> Neighbors(4, nullptr);
-
-    Neighbors.push_back(GetCell(x - 1, y));
-    Neighbors.push_back(GetCell(x + 1, y));
-    Neighbors.push_back(GetCell(x, y - 1));
-    Neighbors.push_back(GetCell(x, y + 1));
-
-    for(auto& neighbor : Neighbors)
-    {
-        if(neighbor != nullptr)
-        {
-            TemperatureSum += neighbor.Temperature;
-            NeighborCount++;
-        }
-    }
-    
-
-    float TemperatureSum = c * Neighbors.size() * NextBuffer->at(GetCellIndex(x, y)).Temperature;
-
-    for(auto& Cell : Neighbors)
-    {
-        TemperatureSum += Cell->Temperature;
-    }
-
-    NextBuffer->at(GetCellIndex(x, y)).Temperature = TemperatureSum / (c * Neighbors.size() + Neighbors.size());
-}
-*/
-void grid::ConductHeat()
-{
-    
-    *NextBuffer = *CurrentBuffer;
-
-#if 1
-    for(int y = 0; y < Height; y++)
-    {
-        for(int x = 0; x < Width; x++)
-        {
-            int i = (y * Width) + x;
-            
-            if(x == Width - 1 || y == Height - 1)
-            {
-                // Cells on right, but not bottom-right
-                if(x == Width - 1 && y != Height - 1)
-                {
-                    // Down neighbor
-                    TransferCellHeat(i, i + Width);
-                }
-                // Cells on bottom, but not bottom-right
-                if(y == Height - 1 && x != Width - 1)
-                {
-                    // Right neighbor 
-                    TransferCellHeat(i, i + 1);
-                }
-            }
-            else
-            {                
-                // Right neighbor
-                TransferCellHeat(i, i + 1);
-                // Down neighbor
-                TransferCellHeat(i, i + Width);
-            }
-        }
-    }
-    
-#endif
-    
-#if 0
-    for(int y = 0; y < Height; y++)
-    {
-        for(int x = 0; x < Width; x++)
-        {
-            UpdateTemperature(x, y);
-        }
-    }
-
-#endif
-
-    UpdateCellColors();
-    
-        *CurrentBuffer = *NextBuffer;
+    target.draw(mHeatGrid, states);
 }
 
 int main()
-{   
-    sf::RenderWindow Window(sf::VideoMode(WindowWidth, WindowHeight), "Window");
-    
+{
+    sf::RenderWindow Window(sf::VideoMode(constants::WindowWidth, constants::WindowHeight), "Window");//, sf::Style::Fullscreen);
     Window.setFramerateLimit(60);
 
-    // GD = 2
-    // TransferCellHeat() -> 42FPS
-    // UpdateTemperature() -> 12FPS
+        if(!constants::fontCourierNew.loadFromFile("assets/cour.ttf"))
+        {
+        std::cout << "\nFailed to load font.";
+        }
     
-    unsigned int GridDivider = 10;
-    grid MainGrid(WindowWidth / GridDivider, WindowHeight / GridDivider, {GridDivider, GridDivider});
+//    cell_grid Grid(constants::WindowWidth / Divider, constants::WindowHeight / Divider);
+//    Grid.c = 0.0;
 
-    bool start = false;
-
-    uint64_t TimeSum = 0;
-    uint64_t TimeCount = 0;
-
-    Window.draw(MainGrid);
-    Window.display();
+    bool Quit = false;
     
-    xish::timer Timer;
-    Timer.AddDescriptor("opt_level", "O2");
-    Timer.AddDescriptor("build", "r");
-    Timer.AddDescriptor("function", "ConductHeat");
-    Timer.AddDescriptor("pixel_count", WindowWidth * WindowHeight);
-    Timer.AddDescriptor("cell_count", MainGrid.CurrentBuffer->size());
+    // On O2 + release (100, 100)
+    //1200FPS on 1 thread
+    //575FPS on main thread only
+    //About 2700 grid updates/s + 1200FPS with 3 cores
+
+    // O2 + r ( 1280, 720)
+    // 16FPS and 25 grid updates/s
+    // Versus 6-7 grid updates/s + 6-7 FPS in old heat program
+
+    // O2 + r (640, 360)
+    // 60-65FPS and ~100-105 grid updates/s
+    // Versus 30 grid updates/s + 30FPS in old heat program
+
+    // O2 + r (1280, 720) when cell members changed to doubles from floats
+    // 11FPS and 18 grid updates/s
+    
+   
+/*
+    unsigned int ThreadCount = std::thread::hardware_concurrency() - 1;
+    unsigned int CellsPerThread = (Grid.mWidth * Grid.mHeight) / ThreadCount;
+
+    std::vector<std::thread> Threads;
+    
+    for(unsigned int thread_index = 0; thread_index < ThreadCount; thread_index++)
+    {
+        unsigned int MinIndex = CellsPerThread * thread_index;
+        unsigned int MaxIndex = CellsPerThread * (thread_index + 1) - 1;
+
+        if(thread_index == ThreadCount - 1)
+        {
+            MaxIndex = Grid.mWidth * Grid.mHeight;
+        }
+
+        Threads.push_back(std::thread(std::bind(LoopStepSubCollection, &Quit, &LoopCount, &Grid, MinIndex, MaxIndex)));
+        std::cout << "\nSplitting thread " << thread_index << " on [" << MinIndex << ", " << MaxIndex << "]";
+    }
+*/
+//    sf::Text TestText("sdklfjasldfjskdf", constants::fontCourierNew, 10);
+//    std::cout << "\nlocal top: " << TestText.getLocalBounds().height - 
+
+    sf::Text BottleTemps("", constants::fontCourierNew, 20);
+    BottleTemps.setPosition(0, 40);
+    sf::Text GameTimeText("-", constants::fontCourierNew, 20);
+    sf::Text FPSText("FPS: 00 ", constants::fontCourierNew, 20);
+    FPSText.setPosition(constants::WindowWidth - FPSText.getLocalBounds().width, 0);
+
+    temperature_scale TemperatureScale(273.f, 373.f, {0.f, static_cast<float>(constants::WindowHeight) - 10.f, static_cast<float>(constants::WindowWidth), 10.f});
+    
+    environment ColdRoom = {333.0, 42.0};
+    environment HotRoom = {358.0, 42.0};
+    item Bottle("assets/waterbottle.itm", ColdRoom);
+    Bottle.SetEnvironment(HotRoom);
+    Bottle.setScale(2.0, 2.0);
+    
+    sf::Time LoopTime = sf::seconds(1.0);
+    unsigned int LoopCount = 0;
+    unsigned int FrameCount = 0;
+    
+    sf::Clock GameTime;
+    sf::Clock Timer;
     
     while(Window.isOpen())
     {
         sf::Event Event;
         while(Window.pollEvent(Event))
         {
-            if(Event.type == sf::Event::Closed) Window.close();
+            if(Event.type == sf::Event::Closed)
+            {
+                Window.close();
+                Quit = true;
+/*
+                for(int thread_index = 0; thread_index < Threads.size(); thread_index++)
+                {
+                    Threads[thread_index].join();
+                    std::cout << "\nJoining thread " << thread_index;
+                }
+*/
+            }
         }
 
-        
+        /*
         if(Window.hasFocus())
         {
             if(sf::Mouse::isButtonPressed(sf::Mouse::Left))
             {
                 sf::Vector2i MousePosition = sf::Mouse::getPosition(Window);
-                MousePosition.x = std::max(0, std::min(MousePosition.x, WindowWidth - 1));
-                MousePosition.y = std::max(0, std::min(MousePosition.y, WindowHeight - 1));
 
-                int CellX = MousePosition.x / (WindowWidth / MainGrid.Width);
-                int CellY = MousePosition.y / (WindowHeight / MainGrid.Height);
-                MainGrid.SetCellTemperatureArea(CellX, CellY, 1.0);
+                int Radius = 2;
+                int CellX, CellY;
+                PixelsToCellCoords(MousePosition.x, MousePosition.y, CellX, CellY, Grid);
+                Grid.SetCell(CellX, CellY, 0.1, 1.8);
             }
         
             if(sf::Mouse::isButtonPressed(sf::Mouse::Right))
             {
                 sf::Vector2i MousePosition = sf::Mouse::getPosition(Window);
-                MousePosition.x = std::max(0, std::min(MousePosition.x, WindowWidth - 1));
-                MousePosition.y = std::max(0, std::min(MousePosition.y, WindowHeight - 1));
 
-                int CellX = MousePosition.x / (WindowWidth / MainGrid.Width);
-                int CellY = MousePosition.y / (WindowHeight / MainGrid.Height);
-                MainGrid.SetCellTemperatureArea(CellX, CellY, 0.0);
+                int Radius = 2;
+                int CellX, CellY;
+                PixelsToCellCoords(MousePosition.x, MousePosition.y, CellX, CellY, Grid);
+                Grid.SetCell(CellX, CellY, 0.2, 30.0);
             }
 
             if(sf::Keyboard::isKeyPressed(sf::Keyboard::Space))
             {
-                start = true;
+                Grid.c = 0.01;
             }
+            
+        }
+        */
 
-            if(sf::Keyboard::isKeyPressed(sf::Keyboard::R))
-            {
-                MainGrid.Randomize();
-            }
+        if(sf::Keyboard::isKeyPressed(sf::Keyboard::Space))
+        {
         }
         
-        if(start == true)
+        if(Timer.getElapsedTime() >= LoopTime)
         {
-            MainGrid.ConductHeat();
+            CountMutex.lock();
+            LoopCount = 0;
+            CountMutex.unlock();
+            std::cout << "\nFPS:" << FrameCount;
+            FPSText.setString(std::string("FPS: ") + std::to_string(FrameCount));
+            FrameCount = 0;
+            Timer.restart();
         }
         
         Window.clear();
 
-        Window.draw(MainGrid);
+        sf::Vector2i MousePosition = sf::Mouse::getPosition(Window);
+        Bottle.setPosition(MousePosition.x, MousePosition.y);
+        
+        Bottle.Update();
+        
+        BottleTemps.setString(std::string("environment T: ") + std::to_string(Bottle.GetEnvironment().Temperature));
+        BottleTemps.setString(BottleTemps.getString() + std::string("\nwater T [") + PhaseToString(Bottle.GetComponentPhase('W')) + std::string("]: ") + std::to_string(Bottle.GetComponentTemperature('W')));
+        BottleTemps.setString(BottleTemps.getString() + std::string("\nstyrofoam T [") + PhaseToString(Bottle.GetComponentPhase('S')) + std::string("]: ") + std::to_string(Bottle.GetComponentTemperature('S')));
+
+        GameTimeText.setString(std::string("runtime: ") + std::to_string(GameTime.getElapsedTime().asSeconds()) + std::string("s"));
+        
+        Window.draw(Bottle);
+
+        Window.draw(TemperatureScale);
+        
+        Window.draw(BottleTemps);
+        Window.draw(GameTimeText);
+        Window.draw(FPSText);
         
         Window.display();
-
+        FrameCount++;
     }
 }

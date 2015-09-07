@@ -1,8 +1,8 @@
 @echo off
 
-set BUILD=r
-set OPT=-O2
-set PROJECTNAME=heat
+set BUILD=d
+set OPT=-Od
+set PROJECTNAME=HeatThreads
 
 IF %BUILD% EQU d (
    set BUILDSWITCH=-MDd
@@ -16,8 +16,8 @@ IF %BUILD% EQU d (
 mkdir ..\..\build\%PROJECTNAME%
 pushd ..\..\build\%PROJECTNAME%
 
-cl %OPT% -FC -Zi -EHsc %BUILDSWITCH% ..\..\%PROJECTNAME%\src\main.cpp^
- ../../_tools/_personal/timer.cpp^
+cl %OPT% -FC -Zi -EHsc %BUILDSWITCH% ..\..\%PROJECTNAME%\src\main2D.cpp^
+ ../../%PROJECTNAME%/src/cell_grid.cpp^
  -I ../../_tools/_personal^
  -I ../../_tools/SFML-2.3/include^
  -I ../../_tools/glew-1.13.0/include^
