@@ -1,4 +1,14 @@
+* =>  0% functional
+/ => >0% functional
+- => 100% functional, <100% complete
++ => 100% functional, 100% complete
+
+
 *Contour lines?
 *Convection
--Heat sources
+/Heat sources
 *Figure out stability issues with fast conduction speeds
+*Think about surface area when it comes to drawing grid approximations of objects. diagonal pixels will get twice as much heat transfer if within a reservoir.
+*To model convection, instead of setting environment cells of an item's heat grid to the environment temperature every step, we could instead only increment by a factor.
+*Need to put some thought into how I can differentiate between conducting between cells of the same component and not (in an efficient way).
+      Perhaps I can somehow differentiate between components that should consider temperature differentials within itself and one's that don't to ease calculations for systems that don't need it.
