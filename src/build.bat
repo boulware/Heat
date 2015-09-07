@@ -2,7 +2,7 @@
 
 set BUILD=d
 set OPT=-Od
-set PROJECTNAME=HeatThreads
+set PROJECTNAME=Heat
 
 IF %BUILD% EQU d (
    set BUILDSWITCH=-MDd
@@ -16,7 +16,7 @@ IF %BUILD% EQU d (
 mkdir ..\..\build\%PROJECTNAME%
 pushd ..\..\build\%PROJECTNAME%
 
-cl %OPT% -FC -Zi -EHsc %BUILDSWITCH% ..\..\%PROJECTNAME%\src\main2D.cpp^
+cl %OPT% -FC -Zi -EHsc %BUILDSWITCH% ..\..\%PROJECTNAME%\src\main.cpp^
  ../../%PROJECTNAME%/src/cell_grid.cpp^
  -I ../../_tools/_personal^
  -I ../../_tools/SFML-2.3/include^
