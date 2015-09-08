@@ -126,16 +126,29 @@ static phase GetMaterialPhase(material& Material, float Temperature, float Press
 class component
 {
 private:
-    phase Phase;
+    phase mPhase;
 public:
-    std::vector<sf::Vector2u> Positions;
-    float Temperature;
-    material Material;
+    std::vector<sf::Vector2u> mPositions;
+    float mTemperature;
+    material mMaterial;
 
-    phase GetPhase() const {return Phase;}
-    void UpdatePhase()
+    phase GetPhase() const
     {
-        Phase = GetMaterialPhase(Material, Temperature);
+        return mPhase;
+    }
+    
+    void Update(cell_grid& Grid)
+    {
+            float TemperatureSum = 0;
+
+            for(auto& cell_position : mPositions)
+            {
+                TemperatureSum += Grid.GetCell(cell_position.x, cell_position.y)->Temperature;
+            }
+
+            mTemperature = TemperatureSum / (float)mPositions.size();
+
+            mPhase = GetMaterialPhase(mMaterial, mTemperature);
     }
 };
 
@@ -174,7 +187,7 @@ public:
         {
             component& Component = component_map.second;
 
-            Component.UpdatePhase();
+            Component.Update(mHeatGrid);
         }
         mHeatGrid.StepSubCollection();
         mHeatGrid.UpdateCellColors();
@@ -199,12 +212,12 @@ public:
             // The component exists in this item
             float TemperatureSum = 0;
 
-            for(auto& cell_position : mComponentMaps[ComponentID].Positions)
+            for(auto& cell_position : mComponentMaps[ComponentID].mPositions)
             {
                 TemperatureSum += mHeatGrid.GetCell(cell_position.x, cell_position.y)->Temperature;
             }
 
-            return TemperatureSum / (float)mComponentMaps[ComponentID].Positions.size();
+            return TemperatureSum / (float)mComponentMaps[ComponentID].mPositions.size();
         }
         else
         {
@@ -258,8 +271,8 @@ item::item(std::string ItemFilePath, environment SpawnEnvironment)
 
         mHeatGrid = cell_grid(ItemWidth, ItemHeight);
         mHeatGrid.c = 1.0;
-        mHeatGrid.MinTemp = 273.0;
-        mHeatGrid.MaxTemp = 373.0;
+        mHeatGrid.MinTemp = 200.0;
+        mHeatGrid.MaxTemp = 600.0;
     
         ItemFile.clear();
         ItemFile.seekg(0, ItemFile.beg);
@@ -283,12 +296,12 @@ item::item(std::string ItemFilePath, environment SpawnEnvironment)
                     {
                         component Contents;
                         material Water = {1.8, 273.0, 373.0};
-                        Contents.Material = Water;
+                        Contents.mMaterial = Water;
                         mComponentMaps.insert(std::pair<char, component>(CellID, Contents));
                     }
                     
-                    mHeatGrid.SetCell(CellX, CellY, mCurrentEnvironment.Temperature, mComponentMaps[CellID].Material.Resistance);
-                    mComponentMaps[CellID].Positions.push_back({CellX, CellY});
+                    mHeatGrid.SetCell(CellX, CellY, mCurrentEnvironment.Temperature, mComponentMaps[CellID].mMaterial.Resistance);
+                    mComponentMaps[CellID].mPositions.push_back({CellX, CellY});
                     
                     CellX++;
                 } break;
@@ -298,12 +311,12 @@ item::item(std::string ItemFilePath, environment SpawnEnvironment)
                     {
                         component Container;
                         material Styrofoam = {1000.0, 513.0, 1e3};
-                        Container.Material = Styrofoam;
+                        Container.mMaterial = Styrofoam;
                         mComponentMaps.insert(std::pair<char, component>(CellID, Container));
                     }
                     
-                    mHeatGrid.SetCell(CellX, CellY, mCurrentEnvironment.Temperature, mComponentMaps[CellID].Material.Resistance);
-                    mComponentMaps[CellID].Positions.push_back({CellX, CellY});
+                    mHeatGrid.SetCell(CellX, CellY, mCurrentEnvironment.Temperature, mComponentMaps[CellID].mMaterial.Resistance);
+                    mComponentMaps[CellID].mPositions.push_back({CellX, CellY});
 
                     CellX++;
                 } break;
@@ -395,8 +408,8 @@ int main()
 
     temperature_scale TemperatureScale(273.f, 373.f, {0.f, static_cast<float>(constants::WindowHeight) - 10.f, static_cast<float>(constants::WindowWidth), 10.f});
     
-    environment ColdRoom = {333.0, 42.0};
-    environment HotRoom = {358.0, 42.0};
+    environment ColdRoom = {250.0, 42.0};
+    environment HotRoom = {500.0, 42.0};
     item Bottle("assets/waterbottle.itm", ColdRoom);
     Bottle.SetEnvironment(HotRoom);
     Bottle.setScale(2.0, 2.0);
