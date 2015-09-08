@@ -12,3 +12,4 @@
 *To model convection, instead of setting environment cells of an item's heat grid to the environment temperature every step, we could instead only increment by a factor.
 *Need to put some thought into how I can differentiate between conducting between cells of the same component and not (in an efficient way).
       Perhaps I can somehow differentiate between components that should consider temperature differentials within itself and one's that don't to ease calculations for systems that don't need it.
+*Implement color lookup table class along with a dynamic generator.

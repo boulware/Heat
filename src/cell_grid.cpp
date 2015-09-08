@@ -16,8 +16,8 @@ cell_grid::cell_grid(int Width, int Height)
         :
         MinTemp(0.0), MaxTemp(500.0),
         mWidth(Width), mHeight(Height),
-        mThisCollection(Width * Height, {0.8, 1.0}),
-        mPrevCollection(Width * Height, {0.8, 1.0}),
+        mThisCollection(Width * Height, {273.0, 1.0}),
+        mPrevCollection(Width * Height, {273.0, 1.0}),
         mVertices(sf::Quads, 4 * Width * Height)
 {
     setScale(constants::Divider, constants::Divider);
@@ -31,7 +31,7 @@ cell_grid::cell_grid(int Width, int Height)
             Quad[0].position = sf::Vector2f(x, y);
             Quad[1].position = sf::Vector2f((x + 1), y);
             Quad[2].position = sf::Vector2f((x + 1), (y + 1));
-            Quad[3].position = sf::Vector2f(x, (y + 1));              
+            Quad[3].position = sf::Vector2f(x, (y + 1));      
         }
     }
 }

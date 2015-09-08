@@ -16,8 +16,11 @@ IF %BUILD% EQU d (
 mkdir ..\..\build\%PROJECTNAME%
 pushd ..\..\build\%PROJECTNAME%
 
-cl %OPT% -FC -Zi -EHsc %BUILDSWITCH% ..\..\%PROJECTNAME%\src\main.cpp^
+cl %OPT% -FC -Zi -EHsc -MP %BUILDSWITCH% ..\..\%PROJECTNAME%\src\main.cpp^
  ../../%PROJECTNAME%/src/cell_grid.cpp^
+ ../../%PROJECTNAME%/src/item.cpp^
+ ../../%PROJECTNAME%/src/temperature_scale.cpp^
+ ../../%PROJECTNAME%/src/component.cpp^
  -I ../../_tools/_personal^
  -I ../../_tools/SFML-2.3/include^
  -I ../../_tools/glew-1.13.0/include^
