@@ -15,6 +15,13 @@
 #include "item.hpp"
 #include "temperature_scale.hpp"
 
+#include "item.cpp"
+#include "temperature_scale.cpp"
+#include "component.cpp"
+#include "component_grid.cpp"
+#include "surface.cpp"
+#include "grid_texture.cpp"
+
 static void PixelsToCellCoords(int X, int Y, int& CellX, int& CellY, cell_grid& Grid)
 {
     CellX = X / (constants::WindowWidth / Grid.mWidth);
