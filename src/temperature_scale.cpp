@@ -1,6 +1,9 @@
 #include "temperature_scale.hpp"
 
 #include <iostream>
+#include <string>
+
+#include <SFML/Graphics.hpp>
 
 #include "constants.hpp"
 
@@ -14,11 +17,11 @@ void temperature_scale::draw(sf::RenderTarget& target, sf::RenderStates states) 
 }
  
 
-temperature_scale::temperature_scale(float MinTemp, float MaxTemp, sf::FloatRect Rect)
+temperature_scale::temperature_scale(float MinTemp, float MaxTemp, sf::FloatRect Rect, const sf::Font& Font)
         :
         mMinTemp(MinTemp), mMaxTemp(MaxTemp),
-        mMinText(std::to_string(static_cast<int>(MinTemp)), constants::fontCourierNew, 18),
-        mMaxText(std::to_string(static_cast<int>(MaxTemp)), constants::fontCourierNew, 18),
+        mMinText(std::to_string(static_cast<int>(MinTemp)), Font, 18),
+        mMaxText(std::to_string(static_cast<int>(MaxTemp)), Font, 18),
         mRect(Rect)
 {
     setPosition(mRect.left, mRect.top);

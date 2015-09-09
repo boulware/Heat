@@ -10,8 +10,6 @@
 #include "constants.hpp"
 
 #include "material.hpp"
-#include "cell.hpp"
-#include "cell_grid.hpp"
 #include "item.hpp"
 #include "temperature_scale.hpp"
 
@@ -94,21 +92,16 @@ int main()
         std::cout << "\nSplitting thread " << thread_index << " on [" << MinIndex << ", " << MaxIndex << "]";
     }
 */
-//    sf::Text TestText("sdklfjasldfjskdf", constants::fontCourierNew, 10);
-//    std::cout << "\nlocal top: " << TestText.getLocalBounds().height - 
-
-//    sf::Text BottleTemps("", constants::fontCourierNew, 20);
-//    BottleTemps.setPosition(0, 40);
 
     sf::Text GameTimeText("-", constants::fontCourierNew, 20);
     sf::Text FPSText("FPS: 00 ", constants::fontCourierNew, 20);
     FPSText.setPosition(constants::WindowWidth - FPSText.getLocalBounds().width, 0);
 
-    temperature_scale TemperatureScale(273.f, 373.f, {0.f, static_cast<float>(constants::WindowHeight) - 10.f, static_cast<float>(constants::WindowWidth), 10.f});
+    temperature_scale TemperatureScale(273.f, 373.f, {0.f, static_cast<float>(constants::WindowHeight) - 10.f, static_cast<float>(constants::WindowWidth), 10.f}, constants::fontCourierNew);
     
-    environment ColdRoom = {250.0, constants::Materials["air"]};
-    environment HotRoom = {500.0, constants::Materials["air"]};
-    item Bottle("assets/waterbottle.itm", ColdRoom);
+    environment ColdRoom = {298.f, materials::Materials["air"]};
+    environment HotRoom = {750.f, materials::Materials["air"]};
+    item Bottle("assets/PotAndStove.itm", ColdRoom);
     Bottle.MoveToEnvironment(HotRoom);
     Bottle.setScale(2.0, 2.0);
 
@@ -181,7 +174,6 @@ int main()
             CountMutex.lock();
             LoopCount = 0;
             CountMutex.unlock();
-            std::cout << "\nFPS:" << FrameCount;
             FPSText.setString(std::string("FPS: ") + std::to_string(FrameCount));
             FrameCount = 0;
             Timer.restart();

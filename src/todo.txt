@@ -2,14 +2,17 @@
 / => >0% functional
 - => 100% functional, <100% complete
 + => 100% functional, 100% complete
+~ => Currently deprecated
 
 
 *Contour lines?
 *Convection
 /Heat sources
-*Figure out stability issues with fast conduction speeds
+~Figure out stability issues with fast conduction speeds
 *Think about surface area when it comes to drawing grid approximations of objects. diagonal pixels will get twice as much heat transfer if within a reservoir.
 *To model convection, instead of setting environment cells of an item's heat grid to the environment temperature every step, we could instead only increment by a factor.
-*Need to put some thought into how I can differentiate between conducting between cells of the same component and not (in an efficient way).
+/Need to put some thought into how I can differentiate between conducting between cells of the same component and not (in an efficient way).
       Perhaps I can somehow differentiate between components that should consider temperature differentials within itself and one's that don't to ease calculations for systems that don't need it.
 *Implement color lookup table class along with a dynamic generator.
+*Currently, the heat transfer coefficient between two surfaces it not considered. It may be possible to add support for this (by manually specifying it) for balance purposes.
+*Think about how to determine the size of items. Even though an item's component_grid approximation is 10x10, for example, it doesn't mean that it's real-world size is 10x10 units.

@@ -2,14 +2,43 @@
 
 #include <string>
 
-#include "material.hpp"
-
 enum class phase
 {
     Invalid,
     Solid,
     Liquid,
     Gas,
+};
+
+struct phase_transition
+{
+    phase mInitialPhase;
+    phase mFinalPhase;
+    float mTemperature;
+    float mLatentHeat;
+
+    phase_transition(phase InitialPhase, phase FinalPhase, float Temperature, float LatentHeat)
+        :
+        mInitialPhase(InitialPhase), mFinalPhase(FinalPhase), mTemperature(Temperature), mLatentHeat(LatentHeat)
+    {
+    }
+
+    phase_transition() : phase_transition(phase::Invalid, phase::Invalid, -1.f, -1.f) {}
+};
+
+// TODO(tyler): At some point, this can probably be templated for all ranges.
+struct temperature_range
+{
+    float mLower;
+    float mUpper;
+
+    temperature_range(float Lower, float Upper)
+            :
+            mLower(Lower), mUpper(Upper)
+    {
+    }
+
+    temperature_range() : temperature_range(0.f, 1.f) {}
 };
 
 static std::string PhaseToString(phase Phase)
@@ -21,13 +50,6 @@ static std::string PhaseToString(phase Phase)
         case(phase::Gas): return "Gas";
         default: return "Invalid";
     }
-}
-
-static phase GetMaterialPhase(material& Material, float Temperature, float Pressure = 0)
-{
-    if(Temperature < Material.mMeltingPoint) return phase::Solid;
-    else if(Temperature < Material.mBoilingPoint) return phase::Liquid;
-    else return phase::Gas;
 }
 
 #define PHASE_HPP

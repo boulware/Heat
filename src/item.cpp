@@ -5,8 +5,12 @@
 #include <regex>
 #include <sstream>
 
+#include "component_grid.hpp"
+
 item::item(std::string ItemFilePath, environment& SpawnEnvironment)
 {
+    mEnvironmentTemperature = SpawnEnvironment.mTemperature;
+    
     std::ifstream ItemFile(ItemFilePath);
 
     unsigned int ItemWidth = 0;
@@ -17,10 +21,7 @@ item::item(std::string ItemFilePath, environment& SpawnEnvironment)
     {
         std::string Line;
 
-        component EnvironmentComponent;
-        EnvironmentComponent.mTemperature = SpawnEnvironment.mTemperature;
-        EnvironmentComponent.mMaterial = SpawnEnvironment.mMaterial;
-        mComponents.insert({"environment", EnvironmentComponent});
+        mComponents.insert(std::pair<std::string, component>("environment", {SpawnEnvironment.mMaterial, mEnvironmentTemperature}));
                     
         std::map<char, component*> ComponentMap;
         ComponentMap.insert({'.', &mComponents["environment"]});
@@ -32,13 +33,11 @@ item::item(std::string ItemFilePath, environment& SpawnEnvironment)
             std::smatch m;
             if(std::regex_match(Line, m, std::regex("^/(.)=(.*),(.*)$")))
             {
-                component NewComponent;
-                NewComponent.mTemperature = SpawnEnvironment.mTemperature;
-                if(constants::Materials.find(m.str(3)) != constants::Materials.end())
+                component NewComponent(materials::Materials["unspecified"], mEnvironmentTemperature);
+                if(materials::Materials.find(m.str(3)) != materials::Materials.end())
                 {
-                    NewComponent.mMaterial = constants::Materials[m.str(3)];
+                    NewComponent.SetMaterial(materials::Materials[m.str(3)]);
                 }
-                else std::cout << "\nInvalid material found in " << ItemFilePath;
                 
                 mComponents.insert({m.str(2), NewComponent});
                 ComponentMap.insert({const_cast<char*>(m.str(1).c_str())[0], &mComponents[m.str(2)]});
@@ -50,13 +49,15 @@ item::item(std::string ItemFilePath, environment& SpawnEnvironment)
                 ItemWidth = std::max(ItemWidth, static_cast<unsigned int>(Line.length()));
                 ItemHeight++;
             }
-        } 
+        }
 
-        mHeatGrid = cell_grid(ItemWidth, ItemHeight);
-        mHeatGrid.c = 1.0;
-        mHeatGrid.MinTemp = 200.0;
-        mHeatGrid.MaxTemp = 600.0;
-    
+        for(const auto& component : mComponents)
+        {
+            mNextComponentTemperature[component.first] = component.second.GetTemperature();
+        }
+        
+        mComponentGrid = component_grid(ItemWidth, ItemHeight);
+        
         ItemFile.clear();
         // TODO(tyler): Ew. Please fix.
         ItemFile.seekg(StartOfItemData + 2);
@@ -75,39 +76,42 @@ item::item(std::string ItemFilePath, environment& SpawnEnvironment)
                 } break;
                 default:
                 {
-                    mHeatGrid.SetCell(CellX, CellY, SpawnEnvironment.mTemperature, ComponentMap[CellID]->mMaterial.mResistance);
-                    ComponentMap[CellID]->mPositions.push_back({CellX, CellY});
+                    mComponentGrid.SetCell(CellX, CellY, ComponentMap[CellID]);
 
                     CellX++;
                 } break;
             }
         }
+
+        mComponentSurfaces = mComponentGrid.CalculateSurfaces();
     }
     else
     {
         std::cout << "\nFailed to open " << ItemFilePath;
     }
 
-
-    std::cout << "\nItem size is (" << ItemWidth << ", " << ItemHeight << ")";
+    mComponentGrid.setScale(5.0, 5.0);
 }
     
 void item::Update()
 {
-//    ResetEnvironmentCells();
-    mHeatGrid.StepSubCollection();
-    for(auto& component_map : mComponents)
+    for(auto& component_surface : mComponentSurfaces)
     {
-        component& Component = component_map.second;
-
-        Component.Update(mHeatGrid);
+        component_surface.Update();
     }
-    mHeatGrid.UpdateCellColors();
+
+    for(auto& component : mComponents)
+    {
+        component.second.Update();
+    }
+
+    mComponents["environment"].SetTemperature(mEnvironmentTemperature);
+    mComponentGrid.UpdateGridTexture();
 }
     
-// TODO(tyler): ComponentID is intrinsically linked to a MaterialID, which is not a good thing.
 float item::GetComponentTemperature(std::string ComponentID)
 {
+    /*
     if(mComponents.find(ComponentID) != mComponents.end())
     {
         // The component exists in this item
@@ -127,17 +131,17 @@ float item::GetComponentTemperature(std::string ComponentID)
 
         return -1.0;
     }
+    */
+
+    return 0.f;
 }
 
 void item::MoveToEnvironment(environment& Environment)
 {
-    mComponents["environment"].mTemperature = Environment.mTemperature;
-    mComponents["environment"].mMaterial = Environment.mMaterial;
-
-    for(auto& cell_position : mComponents["environment"].mPositions)
-    {
-        mHeatGrid.SetCell(cell_position.x, cell_position.y, Environment.mTemperature, Environment.mMaterial.mResistance);
-    }
+    mEnvironmentTemperature = Environment.mTemperature;
+    
+    mComponents["environment"].SetTemperature(mEnvironmentTemperature);
+    mComponents["environment"].SetMaterial(Environment.mMaterial);
 }
 
 phase item::GetComponentPhase(std::string ComponentID)
@@ -145,7 +149,8 @@ phase item::GetComponentPhase(std::string ComponentID)
     if(mComponents.find(ComponentID) != mComponents.end())
     {
         // The component exists in this item
-        return mComponents[ComponentID].GetPhase();
+//        return mPrevComponents[ComponentID].GetPhase();
+        return mComponents[ComponentID].mPhase;
     }
     else
     {
@@ -160,19 +165,20 @@ void item::draw(sf::RenderTarget& target, sf::RenderStates states) const
 {
     states.transform *= getTransform();
 
-    target.draw(mHeatGrid, states);
+    target.draw(mComponentGrid, states);
 }
 
 std::string item::GetStateString()
 {
     std::stringstream StateString;
 
-    for(const auto& component_pair : mComponents)
+    for(const auto& component : mComponents)
     {
         StateString
-            << component_pair.first
-            << " [" << PhaseToString(component_pair.second.GetPhase()) << "]"
-            << " T: " << component_pair.second.mTemperature
+            << component.first
+            << " [" << PhaseToString(component.second.mPhase) << "]"
+            << " T: " << component.second.GetTemperature()
+            << ", L: " << component.second.mLatentHeat
             << "\n";
     }
 

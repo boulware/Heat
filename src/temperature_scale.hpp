@@ -4,7 +4,7 @@
 
 class temperature_scale : public sf::Drawable, public sf::Transformable
 {
-private:
+public:
     sf::FloatRect mRect;
     float mMinTemp, mMaxTemp;
     sf::Text mMinText, mMaxText;
@@ -14,7 +14,7 @@ private:
     virtual void draw(sf::RenderTarget& target, sf::RenderStates states) const;
  
 public:
-    temperature_scale(float MinTemp, float MaxTemp, sf::FloatRect Rect);
+    temperature_scale(float MinTemp, float MaxTemp, sf::FloatRect Rect, const sf::Font& Font);
 };
  
 #define TEMPERATURE_SCALE_HPP

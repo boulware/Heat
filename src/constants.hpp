@@ -4,9 +4,6 @@
 
 #include <SFML/Graphics.hpp>
 
-#include "material.hpp"
-#include "cell.hpp"
-
 namespace constants
 {
     const unsigned int Divider = 8;
@@ -16,13 +13,9 @@ namespace constants
 
     static sf::Font fontCourierNew;
 
-    static std::map<std::string, material> Materials = {
-        // {Resistance, MeltingPoint, BoilingPoint, Density}
-        {"unspecified", {1.f, 1.f, 1.f, 1.f}},
-        {"water", {1.8f, 273.f, 373.f, 1000.f}},
-        {"polystyrene", {1000.f, 513.f, 1000.f, 1000.f}},
-        {"air", {60.f, 63.f, 77.f, 1.2f}},
-    };
+    static float c = 5.f;
+
+    static float Infinity = 1e20;
 
     static std::vector<uint8_t> Colors = {
         91,229,22,255,

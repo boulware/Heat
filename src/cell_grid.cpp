@@ -1,16 +1,6 @@
 #include "cell_grid.hpp"
 
 #include "constants.hpp"
-
-// TODO(tyler): This should be scaled by an outside factor so that you can see differences over small temperatures on systems with small temperature gradients (similar to temperature gun scaling)
-void hsv(double Temperature, sf::Color& Result, double MinTemp = 0.0, double MaxTemp = 400.0)
-{
-    uint8_t Index = (Temperature - MinTemp) / ((MaxTemp - MinTemp) / 100);
-    Result.r = constants::Colors[4 * (uint8_t)Index + 0];
-    Result.g = constants::Colors[4 * (uint8_t)Index + 1];
-    Result.b = constants::Colors[4 * (uint8_t)Index + 2];
-    Result.a = 255;
-}
     
 cell_grid::cell_grid(int Width, int Height)
         :

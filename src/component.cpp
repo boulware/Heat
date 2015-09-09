@@ -1,20 +1,60 @@
 #include "component.hpp"
 
-phase component::GetPhase() const
+component::component(material Material, float Temperature)
+        :
+        mMaterial(Material), mTemperature(Temperature), mLatentHeat(0.f)
 {
-    return mPhase;
+    mPhase = mMaterial.GetPhase(mTemperature);
 }
-    
-void component::Update(cell_grid& Grid)
+
+float component::GetTemperature() const
 {
-    float TemperatureSum = 0;
+    return mTemperature;
+}
 
-    for(auto& cell_position : mPositions)
+material component::GetMaterial() const
+{
+    return mMaterial;
+}
+
+void component::SetTemperature(float Temperature)
+{
+    mTemperature = Temperature;
+    mPhase = mMaterial.GetPhase(mTemperature);
+}
+
+void component::SetMaterial(material Material)
+{
+    mMaterial = Material;
+    mPhase = mMaterial.GetPhase(mTemperature);
+}
+
+void component::Update()
+{
+//    mPhase = mMaterial.GetPhase(mTemperature);
+}
+
+void component::AddEnergy(float EnergyAmount)
+{
+    float dT  = (EnergyAmount / mMaterial.mSpecificHeat);
+
+    phase_transition PhaseTransition = mMaterial.GetPhaseTransition(mTemperature, mTemperature + dT);
+
+    if(PhaseTransition.mTemperature == -1.f)
     {
-        TemperatureSum += Grid.GetCell(cell_position.x, cell_position.y)->Temperature;
+        mTemperature += dT;
     }
+    else
+    {   
+        mTemperature = PhaseTransition.mTemperature;
+        
+        mLatentHeat += EnergyAmount;
 
-    mTemperature = TemperatureSum / (float)mPositions.size();
-
-    mPhase = GetMaterialPhase(mMaterial, mTemperature);
+        if(mLatentHeat >= PhaseTransition.mLatentHeat)
+        {
+            mPhase = PhaseTransition.mFinalPhase;
+            mTemperature += (EnergyAmount / mMaterial.mSpecificHeat);
+            mLatentHeat = 0.f;
+        }
+    }
 }

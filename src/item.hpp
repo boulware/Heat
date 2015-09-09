@@ -2,15 +2,19 @@
 
 #include <string>
 
-#include "cell_grid.hpp"
 #include "environment.hpp"
 #include "component.hpp"
+#include "component_grid.hpp"
+#include "surface.hpp"
 
 class item : public sf::Drawable, public sf::Transformable
 {
 private:
-    cell_grid mHeatGrid;
+    float mEnvironmentTemperature;
+    std::vector<surface> mComponentSurfaces;
     std::map<std::string, component> mComponents;
+    std::map<std::string, float> mNextComponentTemperature;;
+    component_grid mComponentGrid;
 public:
     item(std::string ItemFile, environment& SpawnEnvironment);
 
@@ -20,7 +24,6 @@ public:
 
     void MoveToEnvironment(environment& Environment);
 
-    // TODO(tyler): ComponentID is intrinsically linked to a MaterialID, which is not a good thing.
     float GetComponentTemperature(std::string ComponentID);
 
     phase GetComponentPhase(std::string ComponentID);
